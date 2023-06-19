@@ -1,5 +1,7 @@
 package com.example.thinktonk
 
+import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -31,7 +33,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -44,12 +45,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.thinktonk.ui.theme.ThinkTonkTheme
+import kotlinx.coroutines.runBlocking
+import model.Quiz
+import repository.QuizRepository
 
-data class ThinkTonk(val number: String, val title: String, val description: String)
-val thinkTonks = mutableStateListOf<ThinkTonk>()
+private val searchQuery = mutableStateOf("")
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        //populateDatabaseWithQuizzes(this)
         setContent {
             ThinkTonkTheme {
                 // A surface container using the 'background' color from the theme
@@ -59,7 +64,34 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    fun populateDatabaseWithQuizzes(context: Context) {
+        val quizRepository = QuizRepository.getInstance(context)
+
+        runBlocking {
+            val quizList = listOf(
+                Quiz(name = "Quiz 1", themes = "History"),
+                Quiz(name = "Quiz 2", themes = "Science"),
+                Quiz(name = "Quiz 3", themes = "Geography"),
+                Quiz(name = "Quiz 4", themes = "Math"),
+                Quiz(name = "Quiz 5", themes = "Sports")
+            )
+
+            for (quiz in quizList) {
+                quizRepository.insertQuiz(quiz)
+            }
+
+            val allQuizzes = quizRepository.getAllQuizzes()
+            println("Quizzes in the database:")
+            for (quiz in allQuizzes) {
+                println("Quiz ID: ${quiz.id}, Name: ${quiz.name}, Themes: ${quiz.themes}")
+            }
+        }
+    }
 }
+
+
+
 
 @Composable
 fun DisplayImageWithText() {
@@ -92,51 +124,6 @@ fun DisplayImageWithText() {
         HoveringButton(modifier = Modifier.align(Alignment.BottomEnd))
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CustomSearchBar() {
-    val textFieldValue = remember { mutableStateOf("") }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.weight(1f).width(30.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xffeae8e0)// Set the background color here
-        ) {
-            TextField(
-                value = textFieldValue.value,
-                onValueChange = { textFieldValue.value = it },
-
-                colors = TextFieldDefaults.textFieldColors(
-                    textColor = Color.Gray,
-                    cursorColor = Color.White,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(28.dp),
-                placeholder = {
-                    Text(text = "Search your think")
-                },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(id = R.mipmap.search_icon), // Replace with your icon resource
-                        contentDescription = "Icon",
-                        tint = Color.Black,
-                        modifier = Modifier.padding(start = 16.dp, end = 8.dp).size(40.dp)
-                    )
-                }
-            )
-        }
-    }
-}
-
-
 @Composable
 fun HoveringButton(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -166,44 +153,116 @@ fun HoveringButton(modifier: Modifier = Modifier) {
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DisplayWithSearchAndList() {
-    Column(
-        modifier = Modifier.fillMaxSize()
+fun CustomSearchBar(
+    onSearchQueryChange: (String) -> Unit
+) {
+    val textFieldValue = remember { mutableStateOf("") }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        CustomSearchBar()
-        Spacer(modifier = Modifier.height(16.dp))
-        CustomList()
+        Surface(
+            modifier = Modifier.weight(1f).width(30.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = Color(0xffeae8e0)
+        ) {
+            TextField(
+                value = textFieldValue.value,
+                onValueChange = {
+                    textFieldValue.value = it
+                    onSearchQueryChange(it) // Call the provided function with the updated value
+                },
+                colors = TextFieldDefaults.textFieldColors(
+                    textColor = Color.Gray,
+                    cursorColor = Color.White,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                shape = RoundedCornerShape(28.dp),
+                placeholder = {
+                    Text(text = "Search your Thonks")
+                },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(id = R.mipmap.search_icon),
+                        contentDescription = "Icon",
+                        tint = Color.Black,
+                        modifier = Modifier.padding(start = 16.dp, end = 8.dp).size(40.dp)
+                    )
+                }
+            )
+        }
     }
 }
 
 @Composable
-fun CustomList() {
+fun DisplayWithSearchAndList() {
+    val searchQuery = remember { mutableStateOf("") }
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        CustomSearchBar(onSearchQueryChange = { query ->
+            searchQuery.value = query
+        })
+        Spacer(modifier = Modifier.height(16.dp))
+        CustomList(searchQuery.value)
+    }
+}
 
+@Composable
+fun CustomList(searchQuery: String) {
+    val repo = QuizRepository.getInstance(context = LocalContext.current)//listOf<Quiz>()
+    val list = runBlocking {
+        repo.getAllQuizzes()
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        // Handle the result if needed
+    }
+
+    val context = LocalContext.current
+    val filteredList = remember(searchQuery, list) {
+        list.filter { quiz ->
+            quiz.name.contains(searchQuery, ignoreCase = true) ||
+                    quiz.themes.contains(searchQuery, ignoreCase = true)
+        }
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize()
     ) {
-        items(thinkTonks) { item ->
+        items(filteredList) { item ->
+            val questions = runBlocking { repo.getQuestionsByQuizId(item.id) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { /* Handle item click */ }
+                    .clickable {
+                        //fix it so the quiz loads upon clikcing on the list, try toast id first
+                        //maybe its sync
+                        val intent = Intent(context, QuestionActivity::class.java)
+                        intent.putExtra("quizId", item.id)
+                        launcher.launch(intent)
+                    }
                     .padding(bottom = 25.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.title,
+                        text = item.name,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
                     Spacer(modifier = Modifier.height(5.dp))
                     Text(
-                        text = item.description,
+                        text = item.themes,
                         fontSize = 14.sp
                     )
                 }
                 Text(
-                    text = item.number,
+                    text = questions.size.toString(),
                     fontSize = 14.sp,
                     modifier = Modifier.padding(start = 8.dp)
                 )

@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'kotlin-kapt'
 }
 
 android {
@@ -47,9 +48,11 @@ android {
 }
 
 dependencies {
-
-    implementation 'androidx.core:core-ktx:1.8.0'
-
+    // optional - Paging 3 Integration
+    implementation 'androidx.room:room-ktx:2.5.1'
+    implementation "androidx.room:room-runtime:2.5.1"
+    annotationProcessor "androidx.room:room-compiler:2.5.1"
+    kapt "androidx.room:room-compiler:2.5.1"
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.3.1'
     implementation 'androidx.activity:activity-compose:1.5.1'
     implementation platform('androidx.compose:compose-bom:2022.10.00')
@@ -68,5 +71,4 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
     implementation 'com.squareup.okhttp3:okhttp:4.9.1'
     implementation 'org.json:json:20210307' // JSON library
-
 }

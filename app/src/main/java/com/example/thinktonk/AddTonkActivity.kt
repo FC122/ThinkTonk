@@ -1,5 +1,6 @@
 package com.example.thinktonk
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.materialIcon
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -55,6 +57,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +70,7 @@ import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.input.pointer.consumePositionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -74,11 +78,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat.startActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.thinktonk.ui.theme.ThinkTonkTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import model.Question
+import model.Quiz
 import java.util.UUID
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -87,12 +97,14 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import repository.QuizRepository
 import java.io.Console
 
 
 data class Subject(val subject: String,val id: String = UUID.randomUUID().toString())
-val subjects = mutableStateListOf<Subject>()
+val subjects = mutableStateListOf<String>()
 var thinkName:String="";
+var numberOfThinks:Int=5
 
 class AddTonkActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -105,9 +117,42 @@ class AddTonkActivity : ComponentActivity() {
     }
 }
 
+
 @Composable
 fun AddTonkActivityContent() {
     val context = LocalContext.current;
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        // Handle the result if needed
+    }
+    val lifecycleScope =  LocalLifecycleOwner.current.lifecycleScope
+    val showSpinner = remember { mutableStateOf(false) }
+    val getQuiz = remember { mutableStateOf(false) }
+    LaunchedEffect( getQuiz.value){
+        if(!getQuiz.value)
+            return@LaunchedEffect
+        var subjectsStr = ""
+        for (i in 0 until subjects.size) {
+            subjectsStr += "${subjects.get(i)} "
+        }
+
+        val quizId: Long = runBlocking {
+            QuizRepository.getInstance(context).insertQuiz(
+                Quiz(name = thinkName, themes = subjectsStr)
+            )
+        }
+        showSpinner.value = true
+
+        getQuiz(numberOfThinks.toString(), subjectsStr, context, quizId)
+
+        showSpinner.value = false
+
+
+        Log.d("TAG", "QuizId: $quizId")
+
+        val intent = Intent(context, QuestionActivity::class.java)
+        intent.putExtra("quizId", quizId)
+        launcher.launch(intent)
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.background(color = Color(0xFFFBF9F1))) {
 
@@ -118,7 +163,7 @@ fun AddTonkActivityContent() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "New Think",
+                    text = "New Thonk",
                     style = TextStyle(
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp
@@ -132,7 +177,7 @@ fun AddTonkActivityContent() {
                     .fillMaxWidth()
             ) {
                 Text(
-                    text = "Think Name",
+                    text = "Thonk Name",
                     style = TextStyle(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
@@ -164,12 +209,12 @@ fun AddTonkActivityContent() {
                 QuantitySelector(
                     initialQuantity = 5,
                     onQuantityChange = { newQuantity ->
-                        // Handle the new quantity here
+                        numberOfThinks = newQuantity
                         println("New quantity: $newQuantity")
                     }
                 )
                 Text(
-                    text = "Tonk",
+                    text = "Subjects",
                     style = TextStyle(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
@@ -195,63 +240,56 @@ fun AddTonkActivityContent() {
         }
         FloatingActionButton(
             onClick = {
-                val client = OkHttpClient()
-                val mediaType = "application/json".toMediaTypeOrNull()
-                val apiKey = "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"//"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"
 
-                val requestBody = JSONObject()
-                    .put("model", "text-davinci-edit-001")
-                    .put("input", "What day of the week is it?")
-                    .put("instruction", "Fix the spelling mistakes")
-                val request = Request.Builder()
-                    .url("https://api.openai.com/v1/edits")
-                    .addHeader("Authorization", "Bearer $apiKey")
-                    .post(RequestBody.create(mediaType, requestBody.toString()))
-                    .build()
-
-                val scope = CoroutineScope(Dispatchers.Main)
-
-                scope.launch {
-                    try {
-                        withContext(Dispatchers.IO) {
-                            val response = client.newCall(request).execute()
-                            val responseJson = JSONObject(response.body?.string())
-
-                            println(responseJson.toString())
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
             },
             containerColor = Color(0xff7879F1),
             contentColor = Color.Black,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(16.dp)
-                .width(100.dp)
+                .width(125.dp)
                 .height(50.dp)
         ) {
-            Text(text = "Tonkn't")
+            Text(text = "Go Back")
         }
         FloatingActionButton(
             onClick = {
-
+                getQuiz.value=true
             },
             containerColor = Color(0xffCDEF84),
             contentColor = Color.Black,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
-                .width(100.dp)
+                .width(120.dp)
                 .height(50.dp)
         ) {
-            Text(text = "Tonkt")
+            Text(text = "Create Tonk")
+        }
+
+        if (showSpinner.value) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
 
     }
 }
+suspend fun insertQuestionsWithCartId1(repo: QuizRepository) {
 
+    repo.insertQuiz(Quiz(name="quiz1", themes = "whatever"))
+    val quizId = 1L // Assuming the quizId is 1
+
+    for (i in 1..10) {
+        val question = Question(
+            quizId = quizId,
+            question = "Baba pere ves $i",
+            answer = "madjarska slovenija francuska",
+            correctAnswerIndex = i % 4, // Example: Assigning correctAnswerIndex as per the pattern
+            url = " "
+        )
+
+        repo.insertQuestion(question)
+    }
+}
 
 @Composable
 fun SubjetsList() {
@@ -274,7 +312,7 @@ fun SubjetsList() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = item.subject,
+                    text = item,
                     fontSize = 14.sp,
                     modifier = Modifier
                         .weight(1f)
@@ -435,7 +473,8 @@ fun PlusSearchBar() {
                 if(textFieldValue.value.isNullOrEmpty()){
                     Toast.makeText(context, "Think empty", Toast.LENGTH_SHORT).show()
                 }else{
-                    subjects.add(Subject(subject=textFieldValue.value))
+                    subjects.add(textFieldValue.value)
+                    textFieldValue.value=""
                 }
             }) {
                 Icon(
@@ -451,6 +490,69 @@ fun PlusSearchBar() {
 
     }
 }
+
+
+suspend fun getQuiz(numberOfTinks: String, subjects: String, context:Context, quizId:Long){
+    val myApiKey=""
+    val repo = QuizRepository.getInstance(context = context)
+    val client = OkHttpClient()
+    val mediaType = "application/json".toMediaTypeOrNull()
+    val apiKey =  myApiKey                                                                                                                          "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"
+    val input = "[{\\\"question\\\":\\\"Some question?\\\",\\\"answers\\\":[\\\"Answer0\\\",\\\"Answer1\\\",\\\"Answer2\\\",\\\"Answer3\\\"], \\\"indexOfTheCorrectAnswer\\\":3},{\\\"question\\\":\\\"Some question?\\\",\\\"answers\\\":[\\\"Answer0\\\",\\\"Answer1\\\",\\\"Answer2\\\",\\\"Answer3\\\"], \\\"indexOfTheCorrectAnswer\\\":3},...]"
+    val requestBody = JSONObject()
+        .put("model", "text-davinci-edit-001")
+        .put("input", input.replace("\\",""))
+        .put("instruction",
+            "Given the input structure as a pattern, generate an array of exactly" + numberOfTinks + " unique and engaging quiz questions, no more, no less. The questions should cover the following subjects: " + subjects + ". For each question, provide 4 possible answers and specify the index of the correct answer. Ensure the questions are challenging, and the answer options are plausible to maintain the difficulty of the quiz.Dont literally follow the input, the input is the example of how the questions should be formated")
+
+    val request = Request.Builder()
+        .url("https://api.openai.com/v1/edits")
+        .addHeader("Authorization", "Bearer $apiKey")
+        .post(RequestBody.create(mediaType, requestBody.toString()))
+        .build()
+
+    try {
+        val response = withContext(Dispatchers.IO) { client.newCall(request).execute() } //openai api responose
+        val responseJson = JSONObject(response.body?.string()) //json response
+        val text = responseJson.getJSONArray("choices").getJSONObject(0).getString("text") //text - list of questions
+        Log.d("TAG", text)
+        val cleanedText = text.replace("\\", "")
+        val jsonArray = JSONArray(cleanedText)
+
+        //insert questions with quizid
+        for (i in 0 until jsonArray.length()) {
+            val questionObject: JSONObject = jsonArray.getJSONObject(i)
+            val questionText: String = questionObject.getString("question")
+            Log.d("TAG", "Question $i $questionText")
+            val answersArray = questionObject.getJSONArray("answers")
+            var answerStr = ""
+            for (j in 0 until answersArray.length()) {
+                val answer: String = answersArray.getString(j)
+                answerStr += "$answer,"
+                Log.d("TAG","Answer: $answer")
+            }
+            Log.d("TAG","Answers: $answerStr")
+
+            val correctAnswerIndex = questionObject.getInt("indexOfTheCorrectAnswer")
+            Log.d("TAG","Index: $correctAnswerIndex")
+
+            withContext(Dispatchers.IO) {
+                repo.insertQuestion(
+                    Question(
+                        quizId = quizId,
+                        question = questionText,
+                        answer = answerStr,
+                        correctAnswerIndex = correctAnswerIndex,
+                        url = " "
+                    )
+                )
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
 
 @Preview(showBackground = true)
 @Composable
