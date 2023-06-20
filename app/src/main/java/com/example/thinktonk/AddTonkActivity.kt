@@ -99,6 +99,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import repository.QuizRepository
 import java.io.Console
+import java.lang.StringBuilder
+import java.util.concurrent.TimeUnit
 
 
 data class Subject(val subject: String,val id: String = UUID.randomUUID().toString())
@@ -495,30 +497,58 @@ fun PlusSearchBar() {
 suspend fun getQuiz(numberOfTinks: String, subjects: String, context:Context, quizId:Long){
     val myApiKey=""
     val repo = QuizRepository.getInstance(context = context)
-    val client = OkHttpClient()
-    val mediaType = "application/json".toMediaTypeOrNull()
-    val apiKey =  myApiKey                                                                                                                          "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"
-    val input = "[{\\\"question\\\":\\\"Some question?\\\",\\\"answers\\\":[\\\"Answer0\\\",\\\"Answer1\\\",\\\"Answer2\\\",\\\"Answer3\\\"], \\\"indexOfTheCorrectAnswer\\\":3},{\\\"question\\\":\\\"Some question?\\\",\\\"answers\\\":[\\\"Answer0\\\",\\\"Answer1\\\",\\\"Answer2\\\",\\\"Answer3\\\"], \\\"indexOfTheCorrectAnswer\\\":3},...]"
-    val requestBody = JSONObject()
-        .put("model", "text-davinci-edit-001")
-        .put("input", input.replace("\\",""))
-        .put("instruction",
-            "Given the input structure as a pattern, generate an array of exactly" + numberOfTinks + " unique and engaging quiz questions, no more, no less. The questions should cover the following subjects: " + subjects + ". For each question, provide 4 possible answers and specify the index of the correct answer. Ensure the questions are challenging, and the answer options are plausible to maintain the difficulty of the quiz.Dont literally follow the input, the input is the example of how the questions should be formated")
+    val builder = OkHttpClient.Builder()
 
+// Set the timeout values
+    builder.connectTimeout(60, TimeUnit.SECONDS) // Connection timeout
+    builder.readTimeout(60, TimeUnit.SECONDS) // Read timeout
+    builder.writeTimeout(60, TimeUnit.SECONDS)
+    val client = builder.build()
+    val mediaType = "application/json".toMediaTypeOrNull()
+    val apiKey =""
+    val questionString = "{\\\"question\\\":\\\"Some question?\\\",\\\"answers\\\":[\\\"Answer0\\\",\\\"Answer1\\\",\\\"Answer2\\\",\\\"Answer3\\\"], \\\"indexOfTheCorrectAnswer\\\":3}"
+    val input = StringBuilder()
+    input.append("[")
+    for(i in 0 until numberOfTinks.toInt()){
+        input.append(questionString)
+    }
+    input.append("]")
+    val result= input.toString()
+    val requestBody = JSONObject()
+        .put("model", "gpt-3.5-turbo")
+        //.put("input", input.replace("\\",""))
+        //.put("instruction",
+            //"Given the input structure as a pattern, generate an array of exactly" + numberOfTinks + " unique and engaging quiz questions, no more, no less. The questions should cover the following subjects: " + subjects + ". For each question, provide 4 possible answers and specify the index of the correct answer. Ensure the questions are challenging, and the answer options are plausible to maintain the difficulty of the quiz.Dont literally follow the input, the input is the example of how the questions should be formated")
+        .put("messages", JSONArray()
+            .put(JSONObject()
+                .put("role", "user")
+                .put("content", "${result.replace("\\","")}\n" +
+                        "\n" +
+                        "Given the input structure as a pattern, generate an array of exactly $numberOfTinks no more, no less. The questions should cover the following subjects: $subjects. For each question, provide 4 possible answers and specify the index of the correct answer. Dont literally follow the input, the input is the example of how the questions should be formated. Dont generate extra text just the array.")
+            )
+        )
     val request = Request.Builder()
-        .url("https://api.openai.com/v1/edits")
+        .url("https://api.openai.com/v1/chat/completions")
         .addHeader("Authorization", "Bearer $apiKey")
         .post(RequestBody.create(mediaType, requestBody.toString()))
         .build()
 
     try {
         val response = withContext(Dispatchers.IO) { client.newCall(request).execute() } //openai api responose
-        val responseJson = JSONObject(response.body?.string()) //json response
-        val text = responseJson.getJSONArray("choices").getJSONObject(0).getString("text") //text - list of questions
-        Log.d("TAG", text)
-        val cleanedText = text.replace("\\", "")
+        //val responseJson = JSONObject(response.body?.string()) //json response
+        //val text = responseJson.getJSONArray("choices").getJSONObject(0).getString("text") //text - list of questions
+        //Log.d("TAG", text)
+        //val cleanedText = text.replace("\\", "")
+        //val jsonArray = JSONArray(cleanedText)
+        val jsonObject = JSONObject(response.body?.string())
+        Log.d("TAG",jsonObject.toString())
+        val content = jsonObject.getJSONArray("choices")
+            .getJSONObject(0)
+            .getJSONObject("message")
+            .getString("content")
+        val cleanedText = content.replace("\\", "")
+        Log.d("TAG", content)
         val jsonArray = JSONArray(cleanedText)
-
         //insert questions with quizid
         for (i in 0 until jsonArray.length()) {
             val questionObject: JSONObject = jsonArray.getJSONObject(i)
